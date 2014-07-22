@@ -1,6 +1,61 @@
 require 'singleton'
 require 'sqlite3'
 
+class DBObject
+  attr_reader :id
+  def initialize
+    @id = nil
+  end
+
+  def save
+    @id.nil? ? create : save
+  end
+
+  def table_name
+  end
+
+  protected
+  attr_writer :id
+  private
+  def create
+    vars = self.instance_variables[1..-1]
+    params = vars.map { |var| instance_variable_get(var) }
+    vars = vars.map { |var| var = var[1..-1] }
+    marks = ('?, ' * (vars.length - 1)) + '?'
+    str =
+    <<-SQL
+    INSERT INTO
+      #{table_name} (#{vars.join(',')})
+    VALUES
+      (#{marks})
+      SQL
+    QuestionsDatabase.instance.execute(str, *params)
+    @id = QuestionsDatabase.instance.last_insert_row_id
+  end
+
+  def update
+    vars = self.instance_variables[1..-1]
+    params = vars.map { |var| instance_variable_get(var) }
+    params << @id
+    vars = vars.map { |var| var = var[1..-1] }
+    str = <<-SQL
+    UPDATE
+      #{table_name}
+    SET
+    SQL
+    vars.each do |var|
+      str << "#{var}= ? ,"
+    end
+    str = str[0..-2]
+    str += <<-SQL
+    WHERE
+      id = ?;
+    SQL
+    puts str
+    QuestionsDatabase.instance.execute(str, *params)
+  end
+end
+
 class QuestionsDatabase < SQLite3::Database
 
   include Singleton
@@ -14,7 +69,7 @@ class QuestionsDatabase < SQLite3::Database
   end
 end
 
-class User
+class User < DBObject
   def self.all
     results = QuestionsDatabase.instance.execute('SELECT * FROM users')
     results.map { |result| User.new(result) }
@@ -36,7 +91,7 @@ class User
       users.id =  ?
     SQL
 
-    results.map { |result| User.new(result) }
+    results.map { |result| User.new(result) }.first
   end
 
   def self.find_by_name(fname, lname)
@@ -50,7 +105,7 @@ class User
       AND users.lname = ?
     SQL
 
-    results.map { |result| User.new(result) }
+    results.map { |result| User.new(result) }.first
   end
 
   def authored_questions
@@ -79,37 +134,41 @@ class User
     results.first['karma']
   end
 
+  def table_name
+    'users'
+  end
+
   def save
     @id.nil? ? create : update
   end
 
   private
-  def create
-    params = [@fname, @lname]
-    QuestionsDatabase.instance.execute(<<-SQL, *params)
-    INSERT INTO
-      users (fname, lname)
-    VALUES
-      (?, ?)
-    SQL
-    @id = QuestionsDatabase.instance.last_insert_row_id
-  end
-
-  def update
-    params = [@fname, @lname, @id]
-    QuestionsDatabase.instance.execute(<<-SQL, *params)
-    UPDATE
-      users
-    SET
-      fname = ?
-      lname = ?
-    WHERE
-      id = ?
-    SQL
-  end
+  # def create
+#     params = [@fname, @lname]
+#     QuestionsDatabase.instance.execute(<<-SQL, *params)
+#     INSERT INTO
+#       users (fname, lname)
+#     VALUES
+#       (?, ?)
+#     SQL
+#     @id = QuestionsDatabase.instance.last_insert_row_id
+#   end
+#
+#   def update
+#     params = [@fname, @lname, @id]
+#     QuestionsDatabase.instance.execute(<<-SQL, *params)
+#     UPDATE
+#       users
+#     SET
+#       fname = ?
+#       lname = ?
+#     WHERE
+#       id = ?
+#     SQL
+#   end
 end
 
-class Question
+class Question < DBObject
   def self.all
     results = QuestionsDatabase.instance.execute('SELECT * FROM questions')
     results.map { |result| Question.new(result) }
@@ -176,35 +235,39 @@ class Question
     QuestionLike.most_liked_questions(n)
   end
 
+  def table_name
+    'questions'
+  end
+
   def save
     @id.nil? ? create : update
   end
 
   private
-  def create
-    params = [@title, @body, @author_id]
-    QuestionsDatabase.instance.execute(<<-SQL, *params)
-    INSERT INTO
-      questions (title, body, author_id)
-    VALUES
-      (?, ?, ?)
-    SQL
-    @id = QuestionsDatabase.instance.last_insert_row_id
-  end
-
-  def update
-    params = [@title, @body, @author_id]
-    QuestionsDatabase.instance.execute(<<-SQL, *params)
-    UPDATE
-      questions
-    SET
-      title = ?
-      body = ?
-      author_id = ?
-    WHERE
-      id = ?
-    SQL
-  end
+  # def create
+#     params = [@title, @body, @author_id]
+#     QuestionsDatabase.instance.execute(<<-SQL, *params)
+#     INSERT INTO
+#       questions (title, body, author_id)
+#     VALUES
+#       (?, ?, ?)
+#     SQL
+#     @id = QuestionsDatabase.instance.last_insert_row_id
+#   end
+#
+#   def update
+#     params = [@title, @body, @author_id]
+#     QuestionsDatabase.instance.execute(<<-SQL, *params)
+#     UPDATE
+#       questions
+#     SET
+#       title = ?
+#       body = ?
+#       author_id = ?
+#     WHERE
+#       id = ?
+#     SQL
+#   end
 end
 
 class QuestionFollower
@@ -338,16 +401,16 @@ class QuestionLike
   end
 end
 
-class Reply
+class Reply < DBObject
   def self.all
     results = QuestionsDatabase.instance.execute('SELECT * FROM replies')
     results.map { |result| Reply.new(result) }
   end
 
-  attr_accessor :id, :qid, :parent, :author_id, :body
+  attr_accessor :id, :question_id, :parent_reply, :author_id, :body
 
   def initialize(options = {})
-    @id, @qid, @parent, @author_id, @body =
+    @id, @question_id, @parent_reply, @author_id, @body =
       options.values_at('id', 'question_id', 'parent_reply', 'author_id', 'body')
   end
 
@@ -395,11 +458,11 @@ class Reply
   end
 
   def question
-    Question.find_by_id(@qid)
+    Question.find_by_id(@question_id)
   end
 
   def parent_reply
-    Reply.find_by_id(@parent)
+    Reply.find_by_id(@parent_reply)
   end
 
   def child_replies
@@ -415,34 +478,38 @@ class Reply
     results.map { |result| Reply.new(result) }
   end
 
+  def table_name
+    'replies'
+  end
+
   def save
     @id.nil? ? create : update
   end
 
   private
-  def create
-    params = [@qid, @parent, @author_id, @body]
-    QuestionsDatabase.instance.execute(<<-SQL, *params)
-    INSERT INTO
-      replies (question_id, parent_reply, author_id, body)
-    VALUES
-      (?, ?, ?, ?)
-    SQL
-    @id = QuestionsDatabase.instance.last_insert_row_id
-  end
-
-  def update
-    params = [@qid, @parent, @author_id, @body]
-    QuestionsDatabase.instance.execute(<<-SQL, *params)
-    UPDATE
-      replies
-    SET
-      question_id = ?
-      parent_reply = ?
-      author_id = ?
-      body = ?
-    WHERE
-      id = ?
-    SQL
-  end
+  # def create
+#     params = [@question_id, @parent_reply, @author_id, @body]
+#     QuestionsDatabase.instance.execute(<<-SQL, *params)
+#     INSERT INTO
+#       replies (question_id, parent_reply, author_id, body)
+#     VALUES
+#       (?, ?, ?, ?)
+#     SQL
+#     @id = QuestionsDatabase.instance.last_insert_row_id
+#   end
+#
+#   def update
+#     params = [@qid, @parent, @author_id, @body]
+#     QuestionsDatabase.instance.execute(<<-SQL, *params)
+#     UPDATE
+#       replies
+#     SET
+#       question_id = ?
+#       parent_reply = ?
+#       author_id = ?
+#       body = ?
+#     WHERE
+#       id = ?
+#     SQL
+#   end
 end
