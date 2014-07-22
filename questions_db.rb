@@ -65,6 +65,19 @@ class User
     QuestionFollower.followed_questions_for_user_id(@id)
   end
 
+  def liked_questions
+    QuestionLike.liked_questions_for_user_id(@id)
+  end
+
+  def average_karma
+    results = SchoolDatabase.instance.execute(<<-SQL, @id)
+    SELECT CAST(COUNT(user_id) AS FLOAT)/COUNT(DISTINCT(question_id)) AS karma
+    FROM questions LEFT OUTER JOIN question_likes ON id = question_id
+    WHERE author_id = ?
+    SQL
+
+    results.first['karma']
+  end
 end
 
 class Question
@@ -106,6 +119,10 @@ class Question
     results.map { |result| Question.new(result) }
   end
 
+  def self.most_followed(n)
+    QuestionFollower.most_followed_questions(n)
+  end
+
   def author
     User.find_by_id(@author_id)
   end
@@ -116,6 +133,18 @@ class Question
 
   def followers
     QuestionFollower.followers_for_question_id(@id)
+  end
+
+  def likers
+    QuestionLike.likers_for_question_id(@id)
+  end
+
+  def num_likes
+    QuestionLike.num_likes_for_question_id(@id)
+  end
+
+  def self.most_liked(n)
+    QuestionLike.most_liked_questions(n)
   end
 end
 
@@ -157,7 +186,25 @@ class QuestionFollower
     results.map { |result| Question.find_by_id(result['question_id']) }
   end
 
+  def self.most_followed_questions(n)
+    results= SchoolDatabase.instance.execute(<<-SQL, n)
+    SELECT
+      question_id
+    FROM
+      (
+      SELECT
+        question_id, Count(user_id) AS num
+      FROM
+        question_followers
+      GROUP BY question_id )
+    ORDER BY
+      num
+    LIMIT
+      ?
+    SQL
 
+    results.map { |result| Question.find_by_id(result['question_id']) }
+  end
 end
 
 class QuestionLike
@@ -172,6 +219,64 @@ class QuestionLike
     @uid, @qid = options.values_at('user_id', 'question_id')
   end
 
+  def self.likers_for_question_id(question_id)
+    results = SchoolDatabase.instance.execute(<<-SQL, question_id)
+    SELECT
+      user_id
+    FROM
+      question_likes
+    WHERE
+      question_likes.question_id =  ?
+    SQL
+
+    results.map { |result| User.find_by_id(result['user_id']) }
+  end
+
+  def self.num_like_for_question_id(question_id)
+    results = SchoolDatabase.instance.execute(<<-SQL, question_id)
+    SELECT
+      Count(user_id) AS num
+    FROM
+      question_likes
+    WHERE question_id = ?
+    GROUP BY question_id
+    SQL
+
+    results.first['num']
+  end
+
+  def self.liked_questions_for_user_id(user_id)
+    results = SchoolDatabase.instance.execute(<<-SQL, user_id)
+    SELECT
+      question_id
+    FROM
+      question_likes
+    WHERE user_id = ?
+    SQL
+
+    results.map { |result| Question.find_by_id(result['question_id']) }
+  end
+
+
+  def self.most_liked_questions(n)
+    results= SchoolDatabase.instance.execute(<<-SQL, n)
+    SELECT
+      question_id
+    FROM
+      (
+      SELECT
+        question_id, Count(user_id) AS num
+      FROM
+        question_likes
+      GROUP BY question_id )
+    ORDER BY
+      num
+    LIMIT
+      ?
+    SQL
+
+    results.map { |result| Question.find_by_id(result['question_id']) }
+  end
 end
 
 class Reply
