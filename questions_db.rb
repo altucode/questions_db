@@ -27,7 +27,7 @@ class User
   end
 
   def self.find_by_id(id)
-    results = SchoolDatabase.instance.execute(<<-SQL, id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, id)
     SELECT
       *
     FROM
@@ -40,7 +40,7 @@ class User
   end
 
   def self.find_by_name(fname, lname)
-    results = SchoolDatabase.instance.execute(<<-SQL, id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, *[fname, lname])
     SELECT
       *
     FROM
@@ -70,13 +70,42 @@ class User
   end
 
   def average_karma
-    results = SchoolDatabase.instance.execute(<<-SQL, @id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, @id)
     SELECT CAST(COUNT(user_id) AS FLOAT)/COUNT(DISTINCT(question_id)) AS karma
     FROM questions LEFT OUTER JOIN question_likes ON id = question_id
     WHERE author_id = ?
     SQL
 
     results.first['karma']
+  end
+
+  def save
+    @id.nil? ? create : update
+  end
+
+  private
+  def create
+    params = [@fname, @lname]
+    QuestionsDatabase.instance.execute(<<-SQL, *params)
+    INSERT INTO
+      users (fname, lname)
+    VALUES
+      (?, ?)
+    SQL
+    @id = QuestionsDatabase.instance.last_insert_row_id
+  end
+
+  def update
+    params = [@fname, @lname, @id]
+    QuestionsDatabase.instance.execute(<<-SQL, *params)
+    UPDATE
+      users
+    SET
+      fname = ?
+      lname = ?
+    WHERE
+      id = ?
+    SQL
   end
 end
 
@@ -94,7 +123,7 @@ class Question
   end
 
   def self.find_by_id(id)
-    results = SchoolDatabase.instance.execute(<<-SQL, id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, id)
     SELECT
       *
     FROM
@@ -107,7 +136,7 @@ class Question
   end
 
   def self.find_by_author_id(author_id)
-    results = SchoolDatabase.instance.execute(<<-SQL, author_id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, author_id)
     SELECT
       *
     FROM
@@ -146,6 +175,36 @@ class Question
   def self.most_liked(n)
     QuestionLike.most_liked_questions(n)
   end
+
+  def save
+    @id.nil? ? create : update
+  end
+
+  private
+  def create
+    params = [@title, @body, @author_id]
+    QuestionsDatabase.instance.execute(<<-SQL, *params)
+    INSERT INTO
+      questions (title, body, author_id)
+    VALUES
+      (?, ?, ?)
+    SQL
+    @id = QuestionsDatabase.instance.last_insert_row_id
+  end
+
+  def update
+    params = [@title, @body, @author_id]
+    QuestionsDatabase.instance.execute(<<-SQL, *params)
+    UPDATE
+      questions
+    SET
+      title = ?
+      body = ?
+      author_id = ?
+    WHERE
+      id = ?
+    SQL
+  end
 end
 
 class QuestionFollower
@@ -161,7 +220,7 @@ class QuestionFollower
   end
 
   def self.followers_for_question_id(question_id)
-    results = SchoolDatabase.instance.execute(<<-SQL, question_id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, question_id)
     SELECT
       user_id
     FROM
@@ -174,7 +233,7 @@ class QuestionFollower
   end
 
   def self.followed_questions_for_user_id(user_id)
-    results = SchoolDatabase.instance.execute(<<-SQL, user_id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, user_id)
     SELECT
       question_id
     FROM
@@ -187,7 +246,7 @@ class QuestionFollower
   end
 
   def self.most_followed_questions(n)
-    results= SchoolDatabase.instance.execute(<<-SQL, n)
+    results= QuestionsDatabase.instance.execute(<<-SQL, n)
     SELECT
       question_id
     FROM
@@ -220,7 +279,7 @@ class QuestionLike
   end
 
   def self.likers_for_question_id(question_id)
-    results = SchoolDatabase.instance.execute(<<-SQL, question_id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, question_id)
     SELECT
       user_id
     FROM
@@ -233,7 +292,7 @@ class QuestionLike
   end
 
   def self.num_like_for_question_id(question_id)
-    results = SchoolDatabase.instance.execute(<<-SQL, question_id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, question_id)
     SELECT
       Count(user_id) AS num
     FROM
@@ -246,7 +305,7 @@ class QuestionLike
   end
 
   def self.liked_questions_for_user_id(user_id)
-    results = SchoolDatabase.instance.execute(<<-SQL, user_id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, user_id)
     SELECT
       question_id
     FROM
@@ -259,7 +318,7 @@ class QuestionLike
 
 
   def self.most_liked_questions(n)
-    results= SchoolDatabase.instance.execute(<<-SQL, n)
+    results= QuestionsDatabase.instance.execute(<<-SQL, n)
     SELECT
       question_id
     FROM
@@ -293,7 +352,7 @@ class Reply
   end
 
   def self.find_by_id(id)
-    results = SchoolDatabase.instance.execute(<<-SQL, id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, id)
     SELECT
       *
     FROM
@@ -306,7 +365,7 @@ class Reply
   end
 
   def self.find_by_question_id(question_id)
-    results = SchoolDatabase.instance.execute(<<-SQL, question_id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, question_id)
     SELECT
       *
     FROM
@@ -319,7 +378,7 @@ class Reply
   end
 
   def self.find_by_user_id(user_id)
-    results = SchoolDatabase.instance.execute(<<-SQL, user_id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, user_id)
     SELECT
       *
     FROM
@@ -344,7 +403,7 @@ class Reply
   end
 
   def child_replies
-    results = SchoolDatabase.instance.execute(<<-SQL, @id)
+    results = QuestionsDatabase.instance.execute(<<-SQL, @id)
     SELECT
       *
     FROM
@@ -354,5 +413,36 @@ class Reply
     SQL
 
     results.map { |result| Reply.new(result) }
+  end
+
+  def save
+    @id.nil? ? create : update
+  end
+
+  private
+  def create
+    params = [@qid, @parent, @author_id, @body]
+    QuestionsDatabase.instance.execute(<<-SQL, *params)
+    INSERT INTO
+      replies (question_id, parent_reply, author_id, body)
+    VALUES
+      (?, ?, ?, ?)
+    SQL
+    @id = QuestionsDatabase.instance.last_insert_row_id
+  end
+
+  def update
+    params = [@qid, @parent, @author_id, @body]
+    QuestionsDatabase.instance.execute(<<-SQL, *params)
+    UPDATE
+      replies
+    SET
+      question_id = ?
+      parent_reply = ?
+      author_id = ?
+      body = ?
+    WHERE
+      id = ?
+    SQL
   end
 end
